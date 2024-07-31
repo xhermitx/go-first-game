@@ -1,37 +1,8 @@
 package game
 
 import (
-	"encoding/json"
-
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 )
-
-type MessageType string
-
-const (
-	JoinGame         MessageType = "join_game"
-	PositionBrodcast MessageType = "pos_broadcast"
-	StatusUpdate     MessageType = "status_update"
-)
-
-type Message struct {
-	Type    MessageType `json:"type"`
-	Payload []byte      `json:"payload"`
-}
-
-func NewMessage(msgType MessageType, data any) (*Message, error) {
-
-	payload, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Message{
-		Type:    msgType,
-		Payload: payload,
-	}, nil
-}
 
 type Status string
 
@@ -65,24 +36,41 @@ func (g *Game) BroadCast(msg Message) error {
 	return nil
 }
 
-func (g *Game) AddPlayer(player Player) error {
+func (g *Game) AddPlayer(player Player) {
 	g.Participants = append(g.Participants, player)
 }
 
-func (g *Game) UpdateGame() {
-	// to be implemented
-}
+func (g *Game) UpdateStatus(winner *Player) error {
 
-type Player struct {
-	PlayerId uuid.UUID `json:"player_id"`
-	Position int       `json:"position"`
-	Conn     *websocket.Conn
-}
+	switch g.Status {
+	case Created:
+		g.Status = InProgress
+		g.Text = genRandomText()
 
-func NewPlayer(conn *websocket.Conn) *Player {
-	return &Player{
-		PlayerId: uuid.New(),
-		Position: 0,
-		Conn:     conn,
+		msg := Message{
+			Type:    StatusUpdate,
+			Payload: g,
+		}
+
+		if err := g.BroadCast(msg); err != nil {
+			return err
+		}
+
+	case InProgress:
+		g.Status = TheEnd
+		msg := Message{
+			Type:    StatusUpdate,
+			Payload: winner,
+		}
+		if err := g.BroadCast(msg); err != nil {
+			return err
+		}
 	}
+
+	return nil
+}
+
+func genRandomText() string {
+	// To be implemented
+	return "This is a sample Text"
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/xhermitx/go-first-game/handlers"
 )
 
 func main() {
@@ -12,9 +13,9 @@ func main() {
 
 	router.StrictSlash(true)
 
-	h := NewHandler()
+	h := handlers.NewHandler()
 
-	router.HandleFunc("/game/create/", h.CreateGame).Methods("POST")
+	router.HandleFunc("/game/create/", h.CreateGame).Methods("GET")
 	router.HandleFunc("/game/join/", h.JoinGame).Methods("POST")
 	router.HandleFunc("/ws/{game_id}", h.Connect)
 

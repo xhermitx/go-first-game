@@ -1,10 +1,11 @@
-package main
+package handlers
 
 import (
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -13,10 +14,13 @@ import (
 
 type Handler struct {
 	Arenas map[uuid.UUID]*game.Game
+	sync.Mutex
 }
 
 func NewHandler() *Handler {
-	return &Handler{}
+	return &Handler{
+		Arenas: make(map[uuid.UUID]*game.Game),
+	}
 }
 
 var upgrader = websocket.Upgrader{}
@@ -59,6 +63,9 @@ func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 
+	h.Lock()
+	defer h.Unlock()
+
 	payload := r.URL.Query().Get("game")
 	if payload == "" {
 		http.Error(w, "Missing game name", http.StatusBadRequest)
@@ -70,6 +77,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 		// handle error
 		return
 	}
+	activeGame := h.Arenas[gameId]
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -79,23 +87,53 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	newPlayer := game.NewPlayer(conn)
-	h.Arenas[gameId].AddPlayer(*newPlayer)
+	activeGame.AddPlayer(*newPlayer)
 
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			// handle err
-			log.Println(err)
+			_ = err
 		}
 
 		var msg game.Message
 		if err := json.Unmarshal(data, &msg); err != nil {
 			// handle err
+			_ = err
 		}
 
-		if err := game.HandleGame(msg); err != nil {
+		if err := h.HandleGame(activeGame, newPlayer, msg); err != nil {
 			// handle error
 			return
 		}
 	}
+}
+
+func (h *Handler) HandleGame(g *game.Game, player *game.Player, msg game.Message) error {
+
+	switch msg.Type {
+	case game.MessageType(game.Created):
+		g.UpdateStatus(nil)
+
+	case game.MessageType(game.PositionBroadcast):
+
+		position := msg.Payload.(struct{ Position int }).Position
+
+		player.UpdatePosition(position)
+
+		if position == len(g.Text) {
+			// Check for Winner and broadcast
+			g.UpdateStatus(player)
+			delete(h.Arenas, g.GameId) // Remove the game from the list
+		}
+
+		posUpdate := game.Message{
+			Type:    msg.Type,
+			Payload: player,
+		}
+		if err := g.BroadCast(posUpdate); err != nil {
+			return err
+		}
+	}
+	return nil
 }
