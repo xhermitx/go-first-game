@@ -3,11 +3,11 @@ package handlers
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/xhermitx/go-first-game/game"
 )
@@ -37,28 +37,29 @@ func (h *Handler) CreateGame(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		// handle error
-		log.Println(err)
 		return
 	}
 	defer r.Body.Close()
 
-	var data struct {
+	var temp struct {
 		GameId uuid.UUID `json:"game_id"`
 	}
 
-	if err = json.Unmarshal(body, &data); err != nil {
+	if err = json.Unmarshal(body, &temp); err != nil {
 		// handle error
-		log.Println(err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(h.Arenas[data.GameId])
+	if resGame, ok := h.Arenas[temp.GameId]; !ok {
+		http.Error(w, "game not found", http.StatusNotFound)
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resGame)
+	}
 }
 
 func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
@@ -66,11 +67,8 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 	h.Lock()
 	defer h.Unlock()
 
-	payload := r.URL.Query().Get("game")
-	if payload == "" {
-		http.Error(w, "Missing game name", http.StatusBadRequest)
-		return
-	}
+	vars := mux.Vars(r)
+	payload := vars["game_id"]
 
 	gameId, err := uuid.Parse(payload)
 	if err != nil {
@@ -88,6 +86,11 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 
 	newPlayer := game.NewPlayer(conn)
 	activeGame.AddPlayer(*newPlayer)
+
+	if err := activeGame.BroadCast(game.NewMessage(game.AddPlayer, newPlayer)); err != nil {
+		// handle error
+		_ = err
+	}
 
 	for {
 		_, data, err := conn.ReadMessage()
@@ -112,7 +115,8 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleGame(g *game.Game, player *game.Player, msg game.Message) error {
 
 	switch msg.Type {
-	case game.MessageType(game.Created):
+
+	case game.MessageType(game.StartGame):
 		g.UpdateStatus(nil)
 
 	case game.MessageType(game.PositionBroadcast):

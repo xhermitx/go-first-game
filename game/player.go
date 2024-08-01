@@ -6,9 +6,9 @@ import (
 )
 
 type Player struct {
-	PlayerId uuid.UUID `json:"player_id"`
-	Position int       `json:"position"`
-	Conn     *websocket.Conn
+	PlayerId uuid.UUID       `json:"player_id"`
+	Position int             `json:"position"`
+	Conn     *websocket.Conn `json:"-"`
 }
 
 func NewPlayer(conn *websocket.Conn) *Player {

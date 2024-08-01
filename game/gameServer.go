@@ -47,10 +47,7 @@ func (g *Game) UpdateStatus(winner *Player) error {
 		g.Status = InProgress
 		g.Text = genRandomText()
 
-		msg := Message{
-			Type:    StatusUpdate,
-			Payload: g,
-		}
+		msg := NewMessage(StatusUpdate, g)
 
 		if err := g.BroadCast(msg); err != nil {
 			return err
@@ -58,10 +55,8 @@ func (g *Game) UpdateStatus(winner *Player) error {
 
 	case InProgress:
 		g.Status = TheEnd
-		msg := Message{
-			Type:    StatusUpdate,
-			Payload: winner,
-		}
+		msg := NewMessage(StatusUpdate, winner)
+
 		if err := g.BroadCast(msg); err != nil {
 			return err
 		}
