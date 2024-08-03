@@ -69,6 +69,8 @@ func main() {
 
 	fmt.Println(newGame.Status)
 
+	x := make(chan int)
+
 	go func() {
 		for {
 			var msg map[string]any
@@ -103,6 +105,7 @@ func main() {
 			log.Println("error writing the message: ", err)
 		}
 	}
+	<-x
 }
 
 func handleMsg(conn *websocket.Conn, g *Game, msg map[string]any) error {

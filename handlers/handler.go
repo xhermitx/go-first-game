@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/mitchellh/mapstructure"
 	"github.com/xhermitx/go-first-game/game"
 )
 
@@ -96,7 +98,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for {
-		var data any
+		var data map[string]any
 		if err := conn.ReadJSON(&data); err != nil {
 			// handle err
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -116,39 +118,40 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *Handler) HandleGame(g *game.Game, player game.Player, msg any) error {
+func (h *Handler) HandleGame(g *game.Game, player game.Player, msg map[string]any) error {
 
-	// switch msg.Type {
+	payload, ok := msg["payload"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("payload is not of type map[string]any")
+	}
 
-	// case game.MessageType(game.StartGame):
-	// 	if err := g.UpdateStatus(nil); err != nil {
-	// 		return err
-	// 	}
+	switch msg["type"] {
 
-	// case game.MessageType(game.PositionBroadcast):
+	case game.StartGame:
+		if err := g.UpdateStatus(nil); err != nil {
+			return err
+		}
 
-	// 	position := msg.Payload.(struct{ Position int }).Position
+	case game.PositionBroadcast:
 
-	// 	player.UpdatePosition(position)
+		if err := mapstructure.Decode(payload, &player); err != nil {
+			return err
+		}
 
-	// 	if position == len(g.Text) {
-	// 		// Check for Winner and broadcast
-	// 		if err := g.UpdateStatus(&player); err != nil {
-	// 			return err
-	// 		}
-	// 		delete(h.Arenas, g.GameId) // Remove the game from the list
-	// 	}
+		if player.Position == len(g.Text) {
+			// Check for Winner and broadcast
+			if err := g.UpdateStatus(&player); err != nil {
+				return err
+			}
+			delete(h.Arenas, g.GameId) // Remove the game from the list
+		}
 
-	// 	posUpdate := game.Message{
-	// 		Type:    msg.Type,
-	// 		Payload: player,
-	// 	}
-	// 	if err := g.BroadCast(posUpdate); err != nil {
-	// 		return err
-	// 	}
+		if err := g.BroadCast(game.PositionBroadcast, player); err != nil {
+			return err
+		}
 
-	// default:
-	// 	return fmt.Errorf("unknown message type")
-	// }
+	default:
+		return fmt.Errorf("unknown message type: %s", msg["type"])
+	}
 	return nil
 }
