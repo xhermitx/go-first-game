@@ -17,6 +17,7 @@ type Game struct {
 	Participants []Player  `json:"participants"`
 	Text         string    `json:"text"`
 	Status       Status    `json:"status"`
+	Winner       Player    `json:"winner"`
 }
 
 func NewGame() *Game {
@@ -24,10 +25,14 @@ func NewGame() *Game {
 		GameId:       uuid.New(),
 		Participants: nil,
 		Status:       Created,
+		Text:         genRandomText(),
 	}
 }
 
-func (g *Game) BroadCast(msg Message) error {
+func (g *Game) BroadCast(msgType MessageType, payload any) error {
+
+	msg := NewMessage(msgType, payload)
+
 	for _, player := range g.Participants {
 		if err := player.Conn.WriteJSON(msg); err != nil {
 			return err
@@ -43,21 +48,16 @@ func (g *Game) AddPlayer(player Player) {
 func (g *Game) UpdateStatus(winner *Player) error {
 
 	switch g.Status {
+
 	case Created:
 		g.Status = InProgress
-		g.Text = genRandomText()
-
-		msg := NewMessage(StatusUpdate, g)
-
-		if err := g.BroadCast(msg); err != nil {
+		if err := g.BroadCast(StatusUpdate, *g); err != nil {
 			return err
 		}
 
 	case InProgress:
 		g.Status = TheEnd
-		msg := NewMessage(StatusUpdate, winner)
-
-		if err := g.BroadCast(msg); err != nil {
+		if err := g.BroadCast(StatusUpdate, *g); err != nil {
 			return err
 		}
 	}

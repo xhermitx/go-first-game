@@ -11,8 +11,8 @@ type Player struct {
 	Conn     *websocket.Conn `json:"-"`
 }
 
-func NewPlayer(conn *websocket.Conn) *Player {
-	return &Player{
+func NewPlayer(conn *websocket.Conn) Player {
+	return Player{
 		PlayerId: uuid.New(),
 		Position: 0,
 		Conn:     conn,

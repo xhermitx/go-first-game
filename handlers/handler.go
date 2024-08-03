@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"sync"
 
@@ -73,6 +74,7 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 	gameId, err := uuid.Parse(payload)
 	if err != nil {
 		// handle error
+		http.Error(w, "bad request: game_id", http.StatusBadRequest)
 		return
 	}
 	activeGame := h.Arenas[gameId]
@@ -80,64 +82,73 @@ func (h *Handler) Connect(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// handle error
+		http.Error(w, "connection failed", http.StatusInternalServerError)
 		return
 	}
-	defer conn.Close()
 
 	newPlayer := game.NewPlayer(conn)
-	activeGame.AddPlayer(*newPlayer)
+	activeGame.AddPlayer(newPlayer)
 
-	if err := activeGame.BroadCast(game.NewMessage(game.AddPlayer, newPlayer)); err != nil {
+	if err := activeGame.BroadCast(game.AddPlayer, newPlayer); err != nil {
 		// handle error
-		_ = err
+		http.Error(w, "error broadcasting", http.StatusInternalServerError)
+		return
 	}
 
 	for {
-		_, data, err := conn.ReadMessage()
-		if err != nil {
+		var data any
+		if err := conn.ReadJSON(&data); err != nil {
 			// handle err
-			_ = err
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("error: %v", err)
+			} else {
+				log.Printf("ReadJSON error: %v", err)
+			}
+			break
 		}
 
-		var msg game.Message
-		if err := json.Unmarshal(data, &msg); err != nil {
-			// handle err
-			_ = err
-		}
-
-		if err := h.HandleGame(activeGame, newPlayer, msg); err != nil {
+		if err := h.HandleGame(activeGame, newPlayer, data); err != nil {
 			// handle error
+			log.Fatal("error handling the game: ", err)
 			return
 		}
 	}
+
 }
 
-func (h *Handler) HandleGame(g *game.Game, player *game.Player, msg game.Message) error {
+func (h *Handler) HandleGame(g *game.Game, player game.Player, msg any) error {
 
-	switch msg.Type {
+	// switch msg.Type {
 
-	case game.MessageType(game.StartGame):
-		g.UpdateStatus(nil)
+	// case game.MessageType(game.StartGame):
+	// 	if err := g.UpdateStatus(nil); err != nil {
+	// 		return err
+	// 	}
 
-	case game.MessageType(game.PositionBroadcast):
+	// case game.MessageType(game.PositionBroadcast):
 
-		position := msg.Payload.(struct{ Position int }).Position
+	// 	position := msg.Payload.(struct{ Position int }).Position
 
-		player.UpdatePosition(position)
+	// 	player.UpdatePosition(position)
 
-		if position == len(g.Text) {
-			// Check for Winner and broadcast
-			g.UpdateStatus(player)
-			delete(h.Arenas, g.GameId) // Remove the game from the list
-		}
+	// 	if position == len(g.Text) {
+	// 		// Check for Winner and broadcast
+	// 		if err := g.UpdateStatus(&player); err != nil {
+	// 			return err
+	// 		}
+	// 		delete(h.Arenas, g.GameId) // Remove the game from the list
+	// 	}
 
-		posUpdate := game.Message{
-			Type:    msg.Type,
-			Payload: player,
-		}
-		if err := g.BroadCast(posUpdate); err != nil {
-			return err
-		}
-	}
+	// 	posUpdate := game.Message{
+	// 		Type:    msg.Type,
+	// 		Payload: player,
+	// 	}
+	// 	if err := g.BroadCast(posUpdate); err != nil {
+	// 		return err
+	// 	}
+
+	// default:
+	// 	return fmt.Errorf("unknown message type")
+	// }
 	return nil
 }
